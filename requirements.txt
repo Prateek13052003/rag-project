@@ -1,7 +1,8 @@
 streamlit
 python-dotenv
-langchain
-langchain-community
+langchain==0.3.13
+langchain-community==0.3.13
+langchain-core==0.3.13
 langchain-groq
 sentence-transformers
 faiss-cpu
