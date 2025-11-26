@@ -1,9 +1,9 @@
 streamlit
 python-dotenv
-langchain==0.3.7
-langchain-community==0.3.7
-langchain-core==0.3.7
-langchain-text-splitters==0.3.0
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
 langchain-groq
 sentence-transformers
 faiss-cpu
