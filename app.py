@@ -1,6 +1,8 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
+
+# LangChain 1.x compatible imports
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFDirectoryLoader
@@ -8,26 +10,26 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
-
-
-# -----------------------
+# -----------------------------------------
 # Load environment variables
-# -----------------------
+# -----------------------------------------
 load_dotenv()
 GROQ_API_KEY = os.getenv("groq_api_key")
 
-# -----------------------
-# Initialize Groq LLM
-# -----------------------
+
+# -----------------------------------------
+# Initialize LLM (Groq)
+# -----------------------------------------
 llm = ChatGroq(
     groq_api_key=GROQ_API_KEY,
     model_name="llama-3.3-70b-versatile"
 )
 
 
+# Prompt template (LangChain 1.x)
 prompt = ChatPromptTemplate.from_template("""
 Use ONLY the following context to answer the question.
 
@@ -39,66 +41,83 @@ Question: {input}
 """)
 
 
-# -----------------------
-# Vector DB Creation Function
-# -----------------------
+# -----------------------------------------
+# Vector DB Creation
+# -----------------------------------------
 def create_vector_db():
 
-    # Prevent duplicate creation
     if "vectors" in st.session_state:
+        st.info("Vector DB already created.")
         return
 
-    st.write("Loading PDFs...")
+    st.write("📂 Loading PDFs from: research_papers/")
     loader = PyPDFDirectoryLoader("research_papers")
     docs = loader.load()
 
-    st.write("Splitting text into chunks...")
+    st.write("✂️ Splitting documents...")
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200
     )
     chunks = splitter.split_documents(docs)
 
-    st.write("Generating embeddings (FREE HuggingFace model)...")
+    st.write("🔢 Creating embeddings (HuggingFace)...")
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    st.write("Building FAISS Vector Database...")
+    st.write("📦 Building FAISS vectorstore...")
     vectorstore = FAISS.from_documents(chunks, embeddings)
 
     # Save in session
     st.session_state.vectors = vectorstore
-    st.session_state.embeddings = embeddings
-
-    st.success("Vector DB successfully created ✔")
+    st.success("🎉 Vector DB ready!")
 
 
-# -----------------------
-# Streamlit App UI
-# -----------------------
-st.title("RAG with Groq Only")
+# -----------------------------------------
+# STREAMLIT UI
+# -----------------------------------------
+st.title("📘 Research Paper RAG (Groq + LangChain 1.x)")
 
-query = st.text_input("Ask something:")
+query = st.text_input("Ask a question from the research papers:")
 
-if st.button("Build Vector DB"):
+if st.button("Build Vector Database"):
     create_vector_db()
 
-# Prevent errors when DB not built yet
 if query:
+
     if "vectors" not in st.session_state:
-        st.error("⚠️ Please click **Build Vector DB** first!")
+        st.error("⚠️ Please build the vector database first!")
     else:
+
+        # Build retriever
         retriever = st.session_state.vectors.as_retriever()
-        doc_chain = create_stuff_documents_chain(llm, prompt)
-        rag_chain = create_retrieval_chain(retriever, doc_chain)
 
-        result = rag_chain.invoke({"input": query})
+        # Convert retrieved docs to a single text block
+        def combine_docs(docs):
+            return "\n\n".join([d.page_content for d in docs])
 
-        st.subheader("📘 Answer")
-        st.write(result["answer"])
+        # Build RAG chain (new LC 1.x way)
+        rag_chain = (
+            {
+                "context": retriever | combine_docs,
+                "input": RunnablePassthrough(),
+            }
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
 
-        with st.expander("📚 Retrieved Context"):
-            for d in result["context"]:
+        # Run RAG pipeline
+        answer = rag_chain.invoke({"input": query})
+
+        # Display answer
+        st.subheader("🧠 Answer")
+        st.write(answer)
+
+        # Show retrieved docs
+        with st.expander("📄 Retrieved Context"):
+            retrieved_docs = retriever.get_relevant_documents(query)
+            for d in retrieved_docs:
                 st.write(d.page_content)
                 st.write("---")
